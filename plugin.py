@@ -104,7 +104,7 @@ class BasePlugin:
             country  = location.get("country", "")
             circuit  = f"{locality}, {country}" if locality and country else locality or country
 
-            race_text = f"{name}\n{circuit}\n{fecha} {hora}"
+            race_text = f"{name}\n{circuit}\n{fecha} Starting at {hora}"
 
             if race_text != self.lastRaceText:
                 Devices[UNIT_RACE].Update(nValue=0, sValue=race_text)
