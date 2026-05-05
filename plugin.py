@@ -1,13 +1,13 @@
 """
-<plugin key="F1Info" name="F1 Race Info" author="Converted from dzVents" version="1.0.0"
-        externallink="https://api.jolpi.ca/ergast/">
+<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="2.0.0"
+        externallink="https://files-f1.motorsportcalendars.com">
     <description>
-        Fetches next F1 race info and qualifying results from the Jolpi/Ergast API.
-        Creates two text devices: 'F1 Race' and 'F1 Kwalificatie'.
+        Haalt het aankomende F1 race weekend schema op uit de motorsportcalendars.com ICS feed.
+        Toont alle sessies (VT1/VT2/VT3/Sprint/Kwalificatie/Race) in één tekst device.
     </description>
     <params>
-        <param field="Mode1" label="Timezone offset (1=CET, 2=CEST)" width="50px" required="true" default="2"/>
-        <param field="Mode2" label="Poll interval (minutes)" width="50px" required="true" default="5"/>
+        <param field="Mode1" label="Tijdzone offset (1=CET, 2=CEST)" width="50px" required="true" default="2"/>
+        <param field="Mode2" label="Poll interval (minuten)" width="50px" required="true" default="60"/>
         <param field="Mode6" label="Debug" width="75px">
             <options>
                 <option label="True" value="Debug"/>
@@ -20,13 +20,14 @@
 
 import Domoticz
 import datetime
-import json
+import re
 import urllib.request
 import threading
 
-BASE_URL   = "https://api.jolpi.ca/ergast/f1"
-UNIT_RACE  = 1
-UNIT_QUALY = 2
+ICS_URL      = "https://files-f1.motorsportcalendars.com/nl/f1-calendar_p1_p2_p3_qualifying_sprint_gp.ics"
+UNIT_WEEKEND = 1
+SESSION_SEP  = " - "   # separator between race name and session type in ICS SUMMARY
+WINDOW_HOURS = 4       # how many hours after a session starts it still counts as "upcoming"
 
 DAYS_NL   = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"]
 MONTHS_NL = ["", "jan", "feb", "mrt", "apr", "mei", "jun",
@@ -35,10 +36,10 @@ MONTHS_NL = ["", "jan", "feb", "mrt", "apr", "mei", "jun",
 
 class BasePlugin:
     def __init__(self):
-        self.offset       = 2
-        self.pollInterval = 5
+        self.offset         = 2
+        self.pollInterval   = 60
         self.heartbeatCount = 0
-        self.lastRaceText  = ""
+        self.lastText       = ""
 
     # ------------------------------------------------------------------
     def onStart(self):
@@ -48,142 +49,171 @@ class BasePlugin:
         self.offset       = int(Parameters["Mode1"])
         self.pollInterval = int(Parameters["Mode2"])
 
-        # Create devices if they don't exist yet
-        if UNIT_RACE not in Devices:
-            Domoticz.Device(Name="F1 Race", Unit=UNIT_RACE, TypeName="Text").Create()
-            Domoticz.Log("Device 'F1 Race' created.")
+        if UNIT_WEEKEND not in Devices:
+            Domoticz.Device(Name="F1 Weekend", Unit=UNIT_WEEKEND, TypeName="Text").Create()
+            Domoticz.Log("Device 'F1 Weekend' aangemaakt.")
 
-        if UNIT_QUALY not in Devices:
-            Domoticz.Device(Name="F1 Kwalificatie", Unit=UNIT_QUALY, TypeName="Text").Create()
-            Domoticz.Log("Device 'F1 Kwalificatie' created.")
+        Domoticz.Heartbeat(60)
+        Domoticz.Log("F1 Info plugin gestart.")
 
-        Domoticz.Heartbeat(60)  # called every 60 seconds
-        Domoticz.Log("F1 Info plugin started.")
-
-    # ------------------------------------------------------------------
-    def onHeartbeat(self):
-        self.heartbeatCount += 1
-        # Only fetch every <pollInterval> minutes
-        if self.heartbeatCount % self.pollInterval != 0:
-            return
-
-        Domoticz.Debug("Heartbeat: fetching next race info.")
-        t = threading.Thread(target=self._fetchNextRace)
+        t = threading.Thread(target=self._fetchCalendar)
         t.daemon = True
         t.start()
 
     # ------------------------------------------------------------------
-    # ---------- network helpers (run in background thread) -------------
-    def _fetchNextRace(self):
-        url = f"{BASE_URL}/current/next.json"
-        Domoticz.Debug(f"GET {url}")
-        try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
-        except Exception as e:
-            Domoticz.Error(f"Failed to fetch next race: {e}")
+    def onHeartbeat(self):
+        self.heartbeatCount += 1
+        if self.heartbeatCount % self.pollInterval != 0:
             return
 
-        try:
-            races  = data["MRData"]["RaceTable"]["Races"]
-            season = data["MRData"]["RaceTable"]["season"]
-            round_ = data["MRData"]["RaceTable"]["round"]
-
-            if not races:
-                Domoticz.Log("No upcoming race data returned.")
-                return
-
-            race     = races[0]
-            name     = race["raceName"]
-            datepure = race["date"]          # "YYYY-MM-DD"
-            timepure = race.get("time", "00:00:00Z")
-
-            y, mo, d = map(int, datepure.split("-"))
-            weekday  = DAYS_NL[datetime.date(y, mo, d).weekday()]
-            month_nl = MONTHS_NL[mo]
-
-            h, mi = timepure[:5].split(":")
-            hora  = f"{int(h) + self.offset}:{mi}"
-
-            race_text = f"{name}\n{weekday} {d} {month_nl} at {hora}"
-
-            if race_text != self.lastRaceText:
-                Devices[UNIT_RACE].Update(nValue=0, sValue=race_text)
-                self.lastRaceText = race_text
-                Domoticz.Log(f"Race device updated: {race_text}")
-
-            # Now fetch qualifying results for this race
-            qualy_url = f"{BASE_URL}/{season}/{round_}/qualifying.json"
-            Domoticz.Log(f"Find qualify at {qualy_url}")
-            self._fetchQualifying(qualy_url)
-
-        except (KeyError, IndexError, ValueError) as e:
-            Domoticz.Error(f"Error parsing race data: {e}")
+        Domoticz.Debug("Heartbeat: ICS kalender ophalen.")
+        t = threading.Thread(target=self._fetchCalendar)
+        t.daemon = True
+        t.start()
 
     # ------------------------------------------------------------------
-    def _fetchQualifying(self, url):
-        Domoticz.Debug(f"GET {url}")
+    def _fetchCalendar(self):
+        Domoticz.Debug(f"GET {ICS_URL}")
         try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
+            with urllib.request.urlopen(ICS_URL, timeout=10) as resp:
+                ics_text = resp.read().decode("utf-8", errors="replace")
         except Exception as e:
-            Domoticz.Error(f"Failed to fetch qualifying: {e}")
+            Domoticz.Error(f"ICS ophalen mislukt: {e}")
             return
 
         try:
-            race_list = data["MRData"]["RaceTable"]["Races"]
-            Domoticz.Log(f"Number of records for Qualify = {len(race_list)}")
+            events = self._parseICS(ics_text)
+            text   = self._buildWeekendText(events)
+            if text and text != self.lastText:
+                Devices[UNIT_WEEKEND].Update(nValue=0, sValue=text)
+                self.lastText = text
+                Domoticz.Log(f"Weekend device bijgewerkt:\n{text}")
+            elif not text:
+                Domoticz.Log("Geen aankomend race weekend gevonden.")
+        except Exception as e:
+            Domoticz.Error(f"Fout bij verwerken ICS: {e}")
 
-            if not race_list:
-                Domoticz.Log("No qualifying results available yet.")
-                return
+    # ------------------------------------------------------------------
+    def _parseICS(self, ics_text):
+        """Parse ICS tekst en geef lijst van event-dicts terug (SUMMARY + DTSTART)."""
+        # Vouw vervolgregels uit (RFC 5545: regels die beginnen met spatie/tab)
+        lines = ics_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        unfolded = []
+        for line in lines:
+            if line and line[0] in (" ", "\t") and unfolded:
+                unfolded[-1] += line[1:]
+            else:
+                unfolded.append(line)
 
-            qr = race_list[0]["QualifyingResults"]
+        events    = []
+        in_event  = False
+        ev        = {}
 
-            def to_sec(t):
-                if not t:
-                    return float("inf")
-                parts = t.split(":")
-                if len(parts) == 2:
-                    return float(parts[0]) * 60 + float(parts[1])
-                return float("inf")
+        for line in unfolded:
+            if line == "BEGIN:VEVENT":
+                in_event = True
+                ev       = {}
+            elif line == "END:VEVENT":
+                if in_event and "SUMMARY" in ev and "DTSTART" in ev:
+                    events.append(ev)
+                in_event = False
+            elif in_event:
+                if line.startswith("SUMMARY:"):
+                    ev["SUMMARY"] = line[8:]
+                elif line.upper().startswith("DTSTART"):
+                    colon = line.find(":")
+                    if colon == -1:
+                        continue
+                    prop  = line[:colon].upper()
+                    value = line[colon + 1:]
+                    ev["DTSTART"] = value
+                    if value.endswith("Z"):
+                        ev["DTSTART_TZID"] = "UTC"
+                    else:
+                        tzid = next(
+                            (p[5:] for p in prop.split(";") if p.startswith("TZID=")),
+                            "LOCAL"
+                        )
+                        ev["DTSTART_TZID"] = tzid
 
-            def get_best(result):
-                driver = result["Driver"]["familyName"]
-                con    = result["Constructor"]["name"]
-                q1     = result.get("Q1", "")
-                q2     = result.get("Q2", "")
-                q3     = result.get("Q3", "")
-                times  = [(to_sec(q1), q1), (to_sec(q2), q2), (to_sec(q3), q3)]
-                best   = min(times, key=lambda x: x[0])[1] or q1
-                return driver, con, best
+        return events
 
-            lines = []
-            for i in range(min(6, len(qr))):
-                drv, con, best = get_best(qr[i])
-                Domoticz.Debug(f"P{i+1} Best = {best}")
-                lines.append(f"{i+1}. {drv} ({con}) - {best}")
+    # ------------------------------------------------------------------
+    def _parseDT(self, dt_str, tzid):
+        """Zet ICS datetime string om naar naïeve lokale datetime."""
+        dt_str = dt_str.rstrip("Z")
+        if "T" in dt_str:
+            dt = datetime.datetime.strptime(dt_str, "%Y%m%dT%H%M%S")
+        else:
+            dt = datetime.datetime.strptime(dt_str, "%Y%m%d")
 
-            q_text   = "\n".join(lines)
-            prev_val = Devices[UNIT_QUALY].sValue
+        # UTC-tijden omzetten naar lokale tijd met de ingestelde offset
+        if tzid == "UTC":
+            dt = dt + datetime.timedelta(hours=self.offset)
+        # TZID-tijden zijn al in lokale tijd
+        return dt
 
-            Domoticz.Log(q_text)
+    # ------------------------------------------------------------------
+    def _buildWeekendText(self, events):
+        """Zoek het eerstvolgende race weekend en formatteer alle sessies."""
+        now = datetime.datetime.utcnow() + datetime.timedelta(hours=self.offset)
 
-            if q_text != prev_val:
-                Devices[UNIT_QUALY].Update(nValue=0, sValue=q_text)
-                Domoticz.Log("Qualifying device updated.")
+        parsed = []
+        for ev in events:
+            dt = self._parseDT(ev["DTSTART"], ev["DTSTART_TZID"])
+            parsed.append((dt, ev["SUMMARY"]))
 
-        except (KeyError, IndexError) as e:
-            Domoticz.Error(f"Error parsing qualifying data: {e}")
+        parsed.sort(key=lambda x: x[0])
+
+        # Zoek het eerste event dat nog niet meer dan WINDOW_HOURS uur geleden begon
+        future_idx = None
+        for i, (dt, _) in enumerate(parsed):
+            if dt >= now - datetime.timedelta(hours=WINDOW_HOURS):
+                future_idx = i
+                break
+
+        if future_idx is None:
+            return ""
+
+        # Bepaal de race-prefix: alles vóór SESSION_SEP in het eerste aankomende event
+        first_summary = parsed[future_idx][1]
+        if SESSION_SEP in first_summary:
+            race_prefix = first_summary.rsplit(SESSION_SEP, 1)[0]
+        else:
+            race_prefix = first_summary
+
+        # Verzamel alle sessies van dit race weekend
+        weekend_events = [
+            (dt, summ) for dt, summ in parsed
+            if summ.startswith(race_prefix)
+        ]
+
+        if not weekend_events:
+            return ""
+
+        # Maak een leesbare naam: verwijder "Formule 1 " en het jaartal
+        race_name = race_prefix
+        race_name = re.sub(r"^Formule 1\s+", "", race_name)
+        race_name = re.sub(r"\s+\d{4}$", "", race_name)
+
+        lines = [race_name]
+        for dt, summ in weekend_events:
+            weekday  = DAYS_NL[dt.weekday()]
+            month_nl = MONTHS_NL[dt.month]
+            time_str = dt.strftime("%H:%M")
+            session  = summ.rsplit(SESSION_SEP, 1)[-1] if SESSION_SEP in summ else summ
+            lines.append(f"{weekday} {dt.day} {month_nl}  {time_str}  {session}")
+
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     def onStop(self):
-        Domoticz.Log("F1 Info plugin stopped.")
+        Domoticz.Log("F1 Info plugin gestopt.")
 
 
 # Domoticz plugin entry points
 _plugin = BasePlugin()
 
-def onStart():           _plugin.onStart()
-def onStop():            _plugin.onStop()
-def onHeartbeat():       _plugin.onHeartbeat()
+def onStart():     _plugin.onStart()
+def onStop():      _plugin.onStop()
+def onHeartbeat(): _plugin.onHeartbeat()
