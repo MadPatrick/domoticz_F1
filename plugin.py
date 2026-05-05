@@ -99,7 +99,12 @@ class BasePlugin:
             h, mi = timepure[:5].split(":")
             hora  = f"{int(h) + self.offset}:{mi}"
 
-            race_text = f"{name}\n{fecha} Starting at {hora}"
+            location = race.get("Circuit", {}).get("Location", {})
+            locality = location.get("locality", "")
+            country  = location.get("country", "")
+            circuit  = f"{locality}, {country}" if locality and country else locality or country
+
+            race_text = f"{name}\n{circuit}\n{fecha} {hora}"
 
             if race_text != self.lastRaceText:
                 Devices[UNIT_RACE].Update(nValue=0, sValue=race_text)
