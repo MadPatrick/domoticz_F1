@@ -19,6 +19,7 @@
 """
 
 import Domoticz
+import datetime
 import json
 import urllib.request
 import threading
@@ -26,6 +27,10 @@ import threading
 BASE_URL   = "https://api.jolpi.ca/ergast/f1"
 UNIT_RACE  = 1
 UNIT_QUALY = 2
+
+DAYS_NL   = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"]
+MONTHS_NL = ["", "jan", "feb", "mrt", "apr", "mei", "jun",
+             "jul", "aug", "sep", "okt", "nov", "dec"]
 
 
 class BasePlugin:
@@ -93,13 +98,14 @@ class BasePlugin:
             datepure = race["date"]          # "YYYY-MM-DD"
             timepure = race.get("time", "00:00:00Z")
 
-            y, m, d = datepure.split("-")
-            fecha   = f"{d}/{m}/{y}"
+            y, mo, d = map(int, datepure.split("-"))
+            weekday  = DAYS_NL[datetime.date(y, mo, d).weekday()]
+            month_nl = MONTHS_NL[mo]
 
             h, mi = timepure[:5].split(":")
             hora  = f"{int(h) + self.offset}:{mi}"
 
-            race_text = f"{name}\n{fecha} Starting at {hora}"
+            race_text = f"{name}\n{weekday} {d} {month_nl} at {hora}"
 
             if race_text != self.lastRaceText:
                 Devices[UNIT_RACE].Update(nValue=0, sValue=race_text)
