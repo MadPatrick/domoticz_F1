@@ -6,7 +6,7 @@
         Toont alle sessies (VT1/VT2/VT3/Sprint/Kwalificatie/Race) in één tekst device.
     </description>
     <params>
-        <param field="Mode1" label="Tijdzone offset (1=CET, 2=CEST)" width="50px" required="true" default="2"/>
+        <param field="Mode1" label="UTC offset in uren (bijv. 1, 2, -5)" width="75px" required="true" default="1"/>
         <param field="Mode2" label="Poll interval (minuten)" width="50px" required="true" default="60"/>
         <param field="Mode6" label="Debug" width="75px">
             <options>
@@ -36,7 +36,7 @@ MONTHS_NL = ["", "jan", "feb", "mrt", "apr", "mei", "jun",
 
 class BasePlugin:
     def __init__(self):
-        self.offset         = 2
+        self.offset         = 1
         self.pollInterval   = 60
         self.heartbeatCount = 0
         self.lastText       = ""
