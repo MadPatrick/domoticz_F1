@@ -19,6 +19,7 @@
 """
 
 import Domoticz
+import datetime
 import json
 import urllib.request
 import threading
@@ -88,23 +89,23 @@ class BasePlugin:
                 Domoticz.Log("No upcoming race data returned.")
                 return
 
+            DAYS_NL   = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"]
+            MONTHS_NL = ["", "jan", "feb", "mrt", "apr", "mei", "jun",
+                         "jul", "aug", "sep", "okt", "nov", "dec"]
+
             race     = races[0]
             name     = race["raceName"]
             datepure = race["date"]          # "YYYY-MM-DD"
             timepure = race.get("time", "00:00:00Z")
 
-            y, m, d = datepure.split("-")
-            fecha   = f"{d}/{m}/{y}"
+            y, mo, d = map(int, datepure.split("-"))
+            weekday  = DAYS_NL[datetime.date(y, mo, d).weekday()]
+            month_nl = MONTHS_NL[mo]
 
             h, mi = timepure[:5].split(":")
             hora  = f"{int(h) + self.offset}:{mi}"
 
-            location = race.get("Circuit", {}).get("Location", {})
-            locality = location.get("locality", "")
-            country  = location.get("country", "")
-            circuit  = f"{locality}, {country}" if locality and country else locality or country
-
-            race_text = f"{name}\n{circuit}\n{fecha} Starting at {hora}"
+            race_text = f"{name}\n{weekday} {d} {month_nl} at {hora}"
 
             if race_text != self.lastRaceText:
                 Devices[UNIT_RACE].Update(nValue=0, sValue=race_text)
