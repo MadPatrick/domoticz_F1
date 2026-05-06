@@ -328,13 +328,16 @@ class BasePlugin:
             weekday = DAYS_EN[dt.weekday()]
             month_en = MONTHS_EN[dt.month]
             time_str = dt.strftime("%H:%M")
-            return (
+            line = (
                 weekday + " " +
                 str(dt.day) + " " +
                 month_en + " " +
                 time_str + " : " +
                 session
             )
+            if location:
+                line += " | " + location
+            return line
 
         return ""
 
