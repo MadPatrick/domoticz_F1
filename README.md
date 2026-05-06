@@ -21,7 +21,7 @@ Sun 25 May 15:00 : Grand Prix
 1. Copy or clone this repository into the Domoticz plugins folder:
    ```
    cd domoticz/plugins
-   git clone https://github.com/MadPatrick/Domoticz_F1 F1Info
+   git clone https://github.com/MadPatrick/Domoticz_F1
    ```
 2. Restart Domoticz.
 3. Go to **Setup → Hardware** and add a new hardware item of type **F1 Race Info**.
