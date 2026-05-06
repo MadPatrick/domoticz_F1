@@ -3,14 +3,14 @@
 <plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.3"
         externallink="https://files-f1.motorsportcalendars.com">
     <description>
-        Haalt het aankomende F1 race weekend schema op uit de motorsportcalendars.com ICS feed.
-        Toont de sessies van het komende race weekend gefilterd op type.
-        De device-naam wordt automatisch bijgewerkt met de locatie van de Grand Prix.
+        Fetches the upcoming F1 race weekend schedule from the motorsportcalendars.com ICS feed.
+        Displays the sessions of the next race weekend filtered by type.
+        The device name is automatically updated with the location of the Grand Prix.
     </description>
     <params>
-        <param field="Mode1" label="UTC offset in uren" width="75px" required="true" default="1"/>
-        <param field="Mode2" label="Poll interval minuten" width="50px" required="true" default="60"/>
-        <param field="Mode3" label="Sessies weergeven" width="200px">
+        <param field="Mode1" label="UTC offset in hours" width="75px" required="true" default="1"/>
+        <param field="Mode2" label="Poll interval minutes" width="50px" required="true" default="60"/>
+        <param field="Mode3" label="Show sessions" width="200px">
             <options>
                 <option label="Training / Sprint / Race" value="all" default="true"/>
                 <option label="Sprint / Race" value="sprint_race"/>
@@ -32,16 +32,16 @@ import datetime
 import re
 import urllib.request
 
-ICS_URL = "https://files-f1.motorsportcalendars.com/nl/f1-calendar_p1_p2_p3_qualifying_sprint_gp.ics"
+ICS_URL = "https://files-f1.motorsportcalendars.com/en/f1-calendar_p1_p2_p3_qualifying_sprint_gp.ics"
 UNIT_WEEKEND = 1
 SESSION_SEP = " - "
 WINDOW_HOURS = 4
 FETCH_TIMEOUT = 5
 
-DAYS_NL = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"]
-MONTHS_NL = [
-    "", "jan", "feb", "mrt", "apr", "mei", "jun",
-    "jul", "aug", "sep", "okt", "nov", "dec"
+DAYS_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+MONTHS_EN = [
+    "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 ]
 
 
@@ -68,10 +68,10 @@ class BasePlugin:
                 Unit=UNIT_WEEKEND,
                 TypeName="Text"
             ).Create()
-            Domoticz.Log("Device F1 Weekend aangemaakt.")
+            Domoticz.Log("Device F1 Weekend created.")
 
         Domoticz.Heartbeat(60)
-        Domoticz.Log("F1 Info plugin gestart.")
+        Domoticz.Log("F1 Info plugin started.")
 
         self._fetchCalendar()
 
@@ -81,7 +81,7 @@ class BasePlugin:
         if self.heartbeatCount % self.pollInterval != 0:
             return
 
-        Domoticz.Debug("Heartbeat: ICS kalender ophalen.")
+        Domoticz.Debug("Heartbeat: fetching ICS calendar.")
         self._fetchCalendar()
 
     def _fetchCalendar(self):
@@ -99,7 +99,7 @@ class BasePlugin:
                 ics_text = resp.read().decode("utf-8", errors="replace")
 
         except Exception as e:
-            Domoticz.Error("ICS ophalen mislukt: " + str(e))
+            Domoticz.Error("Failed to fetch ICS: " + str(e))
             return
 
         try:
@@ -118,13 +118,13 @@ class BasePlugin:
                 self.lastText = text
                 self.lastLocation = location
 
-                Domoticz.Log("Weekend device bijgewerkt (" + device_name + "):\n" + text)
+                Domoticz.Log("Weekend device updated (" + device_name + "):\n" + text)
 
             elif not text:
-                Domoticz.Log("Geen aankomend race weekend gevonden.")
+                Domoticz.Log("No upcoming race weekend found.")
 
         except Exception as e:
-            Domoticz.Error("Fout bij verwerken ICS: " + str(e))
+            Domoticz.Error("Error processing ICS: " + str(e))
 
     def _parseICS(self, ics_text):
         lines = ics_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
@@ -200,7 +200,7 @@ class BasePlugin:
         if SESSION_SEP in summary:
             left, session = summary.rsplit(SESSION_SEP, 1)
 
-            location = re.sub(r'^Formule\s+1\s+', '', left.strip())
+            location = re.sub(r'^Formula\s+1\s+', '', left.strip())
             location = re.sub(r'\s+\d{4}$', '', location.strip())
 
             return session.strip(), location.strip()
@@ -267,14 +267,14 @@ class BasePlugin:
         lines = []
 
         for dt, session in filtered_events:
-            weekday = DAYS_NL[dt.weekday()]
-            month_nl = MONTHS_NL[dt.month]
+            weekday = DAYS_EN[dt.weekday()]
+            month_en = MONTHS_EN[dt.month]
             time_str = dt.strftime("%H:%M")
 
             lines.append(
                 weekday + " " +
                 str(dt.day) + " " +
-                month_nl + " " +
+                month_en + " " +
                 time_str + " : " +
                 session
             )
@@ -282,7 +282,7 @@ class BasePlugin:
         return "\n".join(lines), race_location
 
     def onStop(self):
-        Domoticz.Log("F1 Info plugin gestopt.")
+        Domoticz.Log("F1 Info plugin stopped.")
 
 
 _plugin = BasePlugin()
