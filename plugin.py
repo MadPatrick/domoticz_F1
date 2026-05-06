@@ -32,7 +32,7 @@ import datetime
 import re
 import urllib.request
 
-ICS_URL = "https://files-f1.motorsportcalendars.com/en/f1-calendar_p1_p2_p3_qualifying_sprint_gp.ics"
+ICS_URL = "https://files-f1.motorsportcalendars.com/nl/f1-calendar_p1_p2_p3_qualifying_sprint_gp.ics"
 UNIT_WEEKEND = 1
 SESSION_SEP = " - "
 WINDOW_HOURS = 4
