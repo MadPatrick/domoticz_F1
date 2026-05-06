@@ -336,7 +336,7 @@ class BasePlugin:
                 session
             )
             if location:
-                return "<b>" + location + "</b>\n" + date_line
+                return location + "<br>" + date_line
             return date_line
 
         return ""
