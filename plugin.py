@@ -17,6 +17,7 @@
                 <option label="Race" value="race"/>
             </options>
         </param>
+        <param field="Mode4" label="Next Event visible days ahead" width="75px" required="true" default="3"/>
         <param field="Mode6" label="Debug" width="75px">
             <options>
                 <option label="True" value="Debug"/>
@@ -34,6 +35,7 @@ import urllib.request
 
 ICS_URL = "https://files-f1.motorsportcalendars.com/nl/f1-calendar_p1_p2_p3_qualifying_sprint_gp.ics"
 UNIT_WEEKEND = 1
+UNIT_NEXT_EVENT = 2
 SESSION_SEP = " - "
 WINDOW_HOURS = 4
 FETCH_TIMEOUT = 5
@@ -50,9 +52,11 @@ class BasePlugin:
         self.offset = 1
         self.pollInterval = 60
         self.sessionFilter = "all"
+        self.nextEventDays = 3
         self.heartbeatCount = 0
         self.lastText = ""
         self.lastLocation = ""
+        self.lastNextEvent = ""
 
     def onStart(self):
         if Parameters["Mode6"] == "Debug":
@@ -61,14 +65,25 @@ class BasePlugin:
         self.offset = int(Parameters["Mode1"])
         self.pollInterval = int(Parameters["Mode2"])
         self.sessionFilter = Parameters.get("Mode3", "all")
+        self.nextEventDays = int(Parameters.get("Mode4", "3"))
 
         if UNIT_WEEKEND not in Devices:
             Domoticz.Device(
                 Name="F1 Weekend",
                 Unit=UNIT_WEEKEND,
-                TypeName="Text"
+                TypeName="Text",
+                Used=1
             ).Create()
             Domoticz.Log("Device F1 Weekend created.")
+
+        if UNIT_NEXT_EVENT not in Devices:
+            Domoticz.Device(
+                Name="Next Event",
+                Unit=UNIT_NEXT_EVENT,
+                TypeName="Text",
+                Used=1
+            ).Create()
+            Domoticz.Log("Device Next Event created.")
 
         Domoticz.Heartbeat(60)
         Domoticz.Log("F1 Info plugin started.")
@@ -105,6 +120,7 @@ class BasePlugin:
         try:
             events = self._parseICS(ics_text)
             text, location = self._buildWeekendText(events)
+            next_event = self._buildNextEventText(events)
 
             device_name = location if location else "F1 Weekend"
 
@@ -122,6 +138,14 @@ class BasePlugin:
 
             elif not text:
                 Domoticz.Log("No upcoming race weekend found.")
+
+            if next_event != self.lastNextEvent:
+                Devices[UNIT_NEXT_EVENT].Update(
+                    nValue=0,
+                    sValue=next_event
+                )
+                self.lastNextEvent = next_event
+                Domoticz.Log("Next Event device updated: " + next_event)
 
         except Exception as e:
             Domoticz.Error("Error processing ICS: " + str(e))
@@ -280,6 +304,39 @@ class BasePlugin:
             )
 
         return "\n".join(lines), race_location
+
+    def _buildNextEventText(self, events):
+        now = datetime.datetime.utcnow() + datetime.timedelta(hours=self.offset)
+        cutoff = now + datetime.timedelta(days=self.nextEventDays)
+
+        parsed = []
+
+        for ev in events:
+            dt = self._parseDT(ev["DTSTART"], ev["DTSTART_TZID"])
+            session, location = self._parseSummary(ev["SUMMARY"])
+            parsed.append((dt, session, location))
+
+        parsed.sort(key=lambda x: x[0])
+
+        for dt, session, location in parsed:
+            if dt < now:
+                continue
+            if not self._sessionPassesFilter(session.lower()):
+                continue
+            if dt > cutoff:
+                return ""
+            weekday = DAYS_EN[dt.weekday()]
+            month_en = MONTHS_EN[dt.month]
+            time_str = dt.strftime("%H:%M")
+            return (
+                weekday + " " +
+                str(dt.day) + " " +
+                month_en + " " +
+                time_str + " : " +
+                session
+            )
+
+        return ""
 
     def onStop(self):
         Domoticz.Log("F1 Info plugin stopped.")
