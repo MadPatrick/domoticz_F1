@@ -56,7 +56,7 @@ class BasePlugin:
         self.heartbeatCount = 0
         self.lastText = ""
         self.lastLocation = ""
-        self.lastNextEvent = ""
+        self.lastNextEvent = None
 
     def onStart(self):
         if Parameters["Mode6"] == "Debug":
