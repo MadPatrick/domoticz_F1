@@ -67,22 +67,24 @@ class BasePlugin:
         self.sessionFilter = Parameters.get("Mode3", "all")
         self.nextEventDays = int(Parameters.get("Mode4", "3"))
 
+        if "f1logo" not in Images:
+            Domoticz.Image("f1logo.zip").Create()
+            Domoticz.Log("F1 logo image created.")
+
+        icon_id = Images["f1logo"].ID if "f1logo" in Images else None
+
         if UNIT_WEEKEND not in Devices:
-            Domoticz.Device(
-                Name="F1 Weekend",
-                Unit=UNIT_WEEKEND,
-                TypeName="Text",
-                Used=1
-            ).Create()
+            dev_kwargs = dict(Name="F1 Weekend", Unit=UNIT_WEEKEND, TypeName="Text", Used=1)
+            if icon_id is not None:
+                dev_kwargs["Image"] = icon_id
+            Domoticz.Device(**dev_kwargs).Create()
             Domoticz.Log("Device F1 Weekend created.")
 
         if UNIT_NEXT_EVENT not in Devices:
-            Domoticz.Device(
-                Name="Next Event",
-                Unit=UNIT_NEXT_EVENT,
-                TypeName="Text",
-                Used=1
-            ).Create()
+            dev_kwargs = dict(Name="Next Event", Unit=UNIT_NEXT_EVENT, TypeName="Text", Used=1)
+            if icon_id is not None:
+                dev_kwargs["Image"] = icon_id
+            Domoticz.Device(**dev_kwargs).Create()
             Domoticz.Log("Device Next Event created.")
 
         Domoticz.Heartbeat(60)
