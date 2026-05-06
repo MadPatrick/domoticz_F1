@@ -17,7 +17,7 @@
                 <option label="Race" value="race"/>
             </options>
         </param>
-        <param field="Mode4" label="Next Event visible days ahead" width="75px" required="true" default="3"/>
+        <param field="Mode4" label="Next Event visible days ahead" width="75px" required="true" default="3" min="0"/>
         <param field="Mode6" label="Debug" width="75px">
             <options>
                 <option label="True" value="Debug"/>
