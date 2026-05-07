@@ -8,6 +8,12 @@
         The device name is automatically updated with the location of the Grand Prix.
     </description>
     <params>
+        <param field="Address" label="Language" width="150px">
+            <options>
+                <option label="English" value="en" default="true"/>
+                <option label="Nederlands" value="nl"/>
+            </options>
+        </param>
         <param field="Mode1" label="UTC offset in hours" width="75px" required="true" default="1"/>
         <param field="Mode2" label="Poll interval minutes" width="50px" required="true" default="60"/>
         <param field="Mode3" label="Show sessions" width="200px">
@@ -34,7 +40,8 @@ import datetime
 import re
 import urllib.request
 
-ICS_URL = "https://files-f1.motorsportcalendars.com/nl/f1-calendar_p1_p2_p3_qualifying_sprint_gp.ics"
+ICS_URL_EN = "https://files-f1.motorsportcalendars.com/f1-calendar_p1_p2_p3_qualifying_sprint_gp.ics"
+ICS_URL_NL = "https://files-f1.motorsportcalendars.com/nl/f1-calendar_p1_p2_p3_qualifying_sprint_gp.ics"
 UNIT_WEEKEND = 1
 UNIT_NEXT_EVENT = 2
 SESSION_SEP = " - "
@@ -50,6 +57,7 @@ MONTHS_EN = [
 
 class BasePlugin:
     def __init__(self):
+        self.ics_url = ICS_URL_EN
         self.offset = 1
         self.pollInterval = 60
         self.sessionFilter = "all"
@@ -63,6 +71,9 @@ class BasePlugin:
     def onStart(self):
         if Parameters["Mode6"] == "Debug":
             Domoticz.Debugging(1)
+
+        language = Parameters.get("Address", "en")
+        self.ics_url = ICS_URL_NL if language == "nl" else ICS_URL_EN
 
         self.offset = int(Parameters["Mode1"])
         self.pollInterval = int(Parameters["Mode2"])
@@ -105,11 +116,11 @@ class BasePlugin:
         self._fetchCalendar()
 
     def _fetchCalendar(self):
-        Domoticz.Debug("GET " + ICS_URL)
+        Domoticz.Debug("GET " + self.ics_url)
 
         try:
             req = urllib.request.Request(
-                ICS_URL,
+                self.ics_url,
                 headers={
                     "User-Agent": "Mozilla/5.0 compatible Domoticz F1 plugin"
                 }
