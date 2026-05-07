@@ -18,6 +18,7 @@
             </options>
         </param>
         <param field="Mode4" label="Next Event visible days ahead" width="75px" required="true" default="3" min="0"/>
+        <param field="Mode5" label="Next Event: text when no event found" width="200px" required="false" default=""/>
         <param field="Mode6" label="Debug" width="75px">
             <options>
                 <option label="True" value="Debug"/>
@@ -53,6 +54,7 @@ class BasePlugin:
         self.pollInterval = 60
         self.sessionFilter = "all"
         self.nextEventDays = 3
+        self.noEventText = ""
         self.heartbeatCount = 0
         self.lastText = ""
         self.lastLocation = ""
@@ -66,6 +68,7 @@ class BasePlugin:
         self.pollInterval = int(Parameters["Mode2"])
         self.sessionFilter = Parameters.get("Mode3", "all")
         self.nextEventDays = int(Parameters.get("Mode4", "3"))
+        self.noEventText = Parameters.get("Mode5", "")
 
         if "f1logo" not in Images:
             Domoticz.Image("f1logo.zip").Create()
@@ -326,7 +329,7 @@ class BasePlugin:
             if not self._sessionPassesFilter(session.lower()):
                 continue
             if dt > cutoff:
-                return ""
+                return self.noEventText
             weekday = DAYS_EN[dt.weekday()]
             month_en = MONTHS_EN[dt.month]
             time_str = dt.strftime("%H:%M")
@@ -341,7 +344,7 @@ class BasePlugin:
                 return location + "<br>" + date_line
             return date_line
 
-        return ""
+        return self.noEventText
 
     def onStop(self):
         Domoticz.Log("F1 Info plugin stopped.")
