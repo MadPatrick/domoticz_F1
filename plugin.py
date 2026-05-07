@@ -18,7 +18,7 @@
             </options>
         </param>
         <param field="Mode4" label="Next Event visible days ahead" width="75px" required="true" default="3" min="0"/>
-        <param field="Mode5" label="Next Event text when no event" width="200px" required="false" default=""/>
+        <param field="Mode5" label="Next Event: text when no event found" width="200px" required="false" default=""/>
         <param field="Mode6" label="Debug" width="75px">
             <options>
                 <option label="True" value="Debug"/>
