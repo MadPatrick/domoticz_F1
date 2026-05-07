@@ -54,10 +54,17 @@ MONTHS_EN = [
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 ]
 
+DAYS_NL = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"]
+MONTHS_NL = [
+    "", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+    "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"
+]
+
 
 class BasePlugin:
     def __init__(self):
         self.ics_url = ICS_URL_EN
+        self.language = "en"
         self.offset = 1
         self.pollInterval = 60
         self.sessionFilter = "all"
@@ -73,6 +80,7 @@ class BasePlugin:
             Domoticz.Debugging(1)
 
         language = Parameters.get("Address", "en")
+        self.language = language
         self.ics_url = ICS_URL_NL if language == "nl" else ICS_URL_EN
 
         self.offset = int(Parameters["Mode1"])
@@ -304,11 +312,14 @@ class BasePlugin:
         if not filtered_events:
             return "", ""
 
+        days = DAYS_NL if self.language == "nl" else DAYS_EN
+        months = MONTHS_NL if self.language == "nl" else MONTHS_EN
+
         lines = []
 
         for dt, session in filtered_events:
-            weekday = DAYS_EN[dt.weekday()]
-            month_en = MONTHS_EN[dt.month]
+            weekday = days[dt.weekday()]
+            month_en = months[dt.month]
             time_str = dt.strftime("%H:%M")
 
             lines.append(
@@ -341,8 +352,10 @@ class BasePlugin:
                 continue
             if dt > cutoff:
                 return self.noEventText
-            weekday = DAYS_EN[dt.weekday()]
-            month_en = MONTHS_EN[dt.month]
+            days = DAYS_NL if self.language == "nl" else DAYS_EN
+            months = MONTHS_NL if self.language == "nl" else MONTHS_EN
+            weekday = days[dt.weekday()]
+            month_en = months[dt.month]
             time_str = dt.strftime("%H:%M")
             date_line = (
                 weekday + " " +
