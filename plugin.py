@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.3"
+<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.4"
         wikilink="https://files-f1.motorsportcalendars.com"
         externallink="https://github.com/MadPatrick/Domoticz_F1">
     <description>
         <h2>F1 Race Info</h2>
-        <p>Version 0.1.3</p>
+        <p>Version 0.1.4</p>
         Fetches the upcoming F1 race weekend schedule from the motorsportcalendars.com ICS feed.
         Displays the sessions of the next race weekend filtered by type.
         The device name is automatically updated with the location of the Grand Prix.
@@ -209,24 +209,34 @@ class BasePlugin:
                     colon = line.find(":")
                     if colon == -1:
                         continue
-
                     prop = line[:colon].upper()
                     value = line[colon + 1:]
-
                     ev["DTSTART"] = value
-
                     if value.endswith("Z"):
                         ev["DTSTART_TZID"] = "UTC"
                     else:
                         tzid = next(
-                            (
-                                p[5:]
-                                for p in prop.split(";")
-                                if p.startswith("TZID=")
-                            ),
+                            (p[5:] for p in prop.split(";") if p.startswith("TZID=")),
                             "LOCAL"
                         )
                         ev["DTSTART_TZID"] = tzid
+
+                # --- NIEUW: DTEND inlezen ---
+                elif line.upper().startswith("DTEND"):
+                    colon = line.find(":")
+                    if colon == -1:
+                        continue
+                    prop = line[:colon].upper()
+                    value = line[colon + 1:]
+                    ev["DTEND"] = value
+                    if value.endswith("Z"):
+                        ev["DTEND_TZID"] = "UTC"
+                    else:
+                        tzid = next(
+                            (p[5:] for p in prop.split(";") if p.startswith("TZID=")),
+                            "LOCAL"
+                        )
+                        ev["DTEND_TZID"] = tzid
 
         return events
 
@@ -250,10 +260,8 @@ class BasePlugin:
 
         if SESSION_SEP in summary:
             left, session = summary.rsplit(SESSION_SEP, 1)
-
             location = re.sub(r'^Formula\s+1\s+', '', left.strip())
             location = re.sub(r'\s+\d{4}$', '', location.strip())
-
             return session.strip(), location.strip()
 
         return summary.strip(), ""
@@ -263,10 +271,8 @@ class BasePlugin:
 
         if self.sessionFilter == "all":
             return True
-
         if self.sessionFilter == "sprint_race":
             return not is_training
-
         if self.sessionFilter == "race":
             return "grand prix" in session_lower
 
@@ -276,7 +282,6 @@ class BasePlugin:
         now = datetime.datetime.utcnow() + datetime.timedelta(hours=self.offset)
 
         parsed = []
-
         for ev in events:
             dt = self._parseDT(ev["DTSTART"], ev["DTSTART_TZID"])
             session, location = self._parseSummary(ev["SUMMARY"])
@@ -285,7 +290,6 @@ class BasePlugin:
         parsed.sort(key=lambda x: x[0])
 
         future_idx = None
-
         for i, item in enumerate(parsed):
             dt = item[0]
             if dt >= now - datetime.timedelta(hours=WINDOW_HOURS):
@@ -319,18 +323,13 @@ class BasePlugin:
         months = MONTHS_NL if self.language == "nl" else MONTHS_EN
 
         lines = []
-
         for dt, session in filtered_events:
             weekday = days[dt.weekday()]
             month_en = months[dt.month]
             time_str = dt.strftime("%H:%M")
-
             lines.append(
-                weekday + " " +
-                str(dt.day) + " " +
-                month_en + " " +
-                time_str + " : " +
-                session
+                weekday + " " + str(dt.day) + " " + month_en + " " +
+                time_str + " : " + session
             )
 
         return "\n".join(lines), race_location
@@ -340,32 +339,38 @@ class BasePlugin:
         cutoff = now + datetime.timedelta(days=self.nextEventDays)
 
         parsed = []
-
         for ev in events:
-            dt = self._parseDT(ev["DTSTART"], ev["DTSTART_TZID"])
+            dt_start = self._parseDT(ev["DTSTART"], ev["DTSTART_TZID"])
             session, location = self._parseSummary(ev["SUMMARY"])
-            parsed.append((dt, session, location))
+
+            # --- NIEUW: eindtijd gebruiken als die beschikbaar is ---
+            if "DTEND" in ev:
+                dt_end = self._parseDT(ev["DTEND"], ev.get("DTEND_TZID", ev["DTSTART_TZID"]))
+            else:
+                # Geen DTEND: val terug op starttijd + 2 uur als buffer
+                dt_end = dt_start + datetime.timedelta(hours=2)
+
+            parsed.append((dt_start, dt_end, session, location))
 
         parsed.sort(key=lambda x: x[0])
 
-        for dt, session, location in parsed:
-            if dt < now:
+        for dt_start, dt_end, session, location in parsed:
+            # Sessie is voorbij als de eindtijd verstreken is
+            if now >= dt_end:
                 continue
             if not self._sessionPassesFilter(session.lower()):
                 continue
-            if dt > cutoff:
+            if dt_start > cutoff:
                 return self.noEventText
+
             days = DAYS_NL if self.language == "nl" else DAYS_EN
             months = MONTHS_NL if self.language == "nl" else MONTHS_EN
-            weekday = days[dt.weekday()]
-            month_en = months[dt.month]
-            time_str = dt.strftime("%H:%M")
+            weekday = days[dt_start.weekday()]
+            month_str = months[dt_start.month]
+            time_str = dt_start.strftime("%H:%M")
             date_line = (
-                weekday + " " +
-                str(dt.day) + " " +
-                month_en + " " +
-                time_str + " : " +
-                session
+                weekday + " " + str(dt_start.day) + " " + month_str + " " +
+                time_str + " : " + session
             )
             if location:
                 return location + "<br>" + date_line
