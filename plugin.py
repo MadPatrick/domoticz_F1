@@ -77,6 +77,7 @@ class BasePlugin:
         self.lastText = ""
         self.lastLocation = ""
         self.lastNextEvent = None
+        self.cachedEvents = []
 
     def onStart(self):
         if Parameters["Mode6"] == "Debug":
@@ -120,6 +121,9 @@ class BasePlugin:
     def onHeartbeat(self):
         self.heartbeatCount += 1
 
+        if self.cachedEvents:
+            self._updateNextEventDevice()
+
         if self.heartbeatCount % self.pollInterval != 0:
             return
 
@@ -146,8 +150,8 @@ class BasePlugin:
 
         try:
             events = self._parseICS(ics_text)
+            self.cachedEvents = events
             text, location = self._buildWeekendText(events)
-            next_event = self._buildNextEventText(events)
 
             device_name = location if location else "F1 Weekend"
 
@@ -166,6 +170,15 @@ class BasePlugin:
             elif not text:
                 Domoticz.Log("No upcoming race weekend found.")
 
+            self._updateNextEventDevice()
+
+        except Exception as e:
+            Domoticz.Error("Error processing ICS: " + str(e))
+
+    def _updateNextEventDevice(self):
+        try:
+            next_event = self._buildNextEventText(self.cachedEvents)
+
             if next_event != self.lastNextEvent:
                 Devices[UNIT_NEXT_EVENT].Update(
                     nValue=0,
@@ -175,7 +188,7 @@ class BasePlugin:
                 Domoticz.Log("Next Event device updated")
 
         except Exception as e:
-            Domoticz.Error("Error processing ICS: " + str(e))
+            Domoticz.Error("Error updating Next Event device: " + str(e))
 
     def _parseICS(self, ics_text):
         lines = ics_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
