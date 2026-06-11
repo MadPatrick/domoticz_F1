@@ -57,12 +57,6 @@ The plugin creates one Domoticz device:
 - Domoticz with Python plugin support enabled.
 - Internet access to reach `files-f1.motorsportcalendars.com`.
 
-## Version history
-
-| Version | Notes |
-|---------|-------|
-| 0.1.3 | Current release |
-
 ## Author
 
 [MadPatrick](https://github.com/MadPatrick)
