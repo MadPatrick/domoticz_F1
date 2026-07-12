@@ -78,6 +78,29 @@ class BasePlugin:
         self.lastLocation = ""
         self.lastNextEvent = None
         self.cachedEvents = []
+        self.imageID = 0
+
+    def _load_device_icon(self):
+        creating_new_icon = "f1logo" not in Images
+        try:
+            Domoticz.Image("f1logo.zip").Create()
+        except Exception as e:
+            Domoticz.Error(f"Unable to load icon pack 'f1logo.zip': {e}")
+            return
+        if "f1logo" in Images:
+            self.imageID = Images["f1logo"].ID
+            Domoticz.Log("Icons created and loaded." if creating_new_icon else
+                         f"Icons found in database (ImageID={self.imageID}).")
+        else:
+            Domoticz.Error("Unable to load icon pack 'f1logo.zip'")
+
+    def _apply_device_icon(self):
+        if not self.imageID:
+            return
+        for unit in (UNIT_WEEKEND, UNIT_NEXT_EVENT):
+            if unit in Devices and Devices[unit].Image != self.imageID:
+                device = Devices[unit]
+                device.Update(nValue=device.nValue, sValue=device.sValue, Image=self.imageID)
 
     def onStart(self):
         if Parameters["Mode6"] == "Debug":
@@ -93,25 +116,19 @@ class BasePlugin:
         self.nextEventDays = int(Parameters.get("Mode4", "3"))
         self.noEventText = Parameters.get("Mode5", "")
 
-        if "f1logo" not in Images:
-            Domoticz.Image("f1logo.zip").Create()
-            Domoticz.Log("F1 logo image created.")
-
-        icon_id = Images["f1logo"].ID if "f1logo" in Images else None
+        self._load_device_icon()
 
         if UNIT_WEEKEND not in Devices:
-            dev_kwargs = dict(Name="F1 Weekend", Unit=UNIT_WEEKEND, TypeName="Text", Used=1)
-            if icon_id is not None:
-                dev_kwargs["Image"] = icon_id
-            Domoticz.Device(**dev_kwargs).Create()
+            Domoticz.Device(Name="F1 Weekend", Unit=UNIT_WEEKEND, TypeName="Text",
+                            Image=self.imageID, Used=1).Create()
             Domoticz.Log("Device F1 Weekend created.")
 
         if UNIT_NEXT_EVENT not in Devices:
-            dev_kwargs = dict(Name="Next Event", Unit=UNIT_NEXT_EVENT, TypeName="Text", Used=1)
-            if icon_id is not None:
-                dev_kwargs["Image"] = icon_id
-            Domoticz.Device(**dev_kwargs).Create()
+            Domoticz.Device(Name="Next Event", Unit=UNIT_NEXT_EVENT, TypeName="Text",
+                            Image=self.imageID, Used=1).Create()
             Domoticz.Log("Device Next Event created.")
+
+        self._apply_device_icon()
 
         Domoticz.Heartbeat(60)
         Domoticz.Log("F1 Info plugin started.")
