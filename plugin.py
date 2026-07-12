@@ -5,10 +5,17 @@
         externallink="https://github.com/MadPatrick/Domoticz_F1">
     <description>
         <h2>F1 Race Info</h2>
-        <p>Version 0.1.4</p>
-        Fetches the upcoming F1 race weekend schedule from the motorsportcalendars.com ICS feed.
-        Displays the sessions of the next race weekend filtered by type.
-        The device name is automatically updated with the location of the Grand Prix.
+        <p><strong>Version:</strong> 0.1.4</p>
+        <p>Retrieves upcoming Formula 1 race weekends from the Motorsport Calendars ICS feed.</p>
+        <h3>Features</h3>
+        <ul>
+            <li>Displays the complete next race weekend schedule.</li>
+            <li>Provides a separate next-event device with a configurable visibility window.</li>
+            <li>Filters practice, sprint and race sessions.</li>
+            <li>Automatically includes the Grand Prix location in the device name.</li>
+        </ul>
+        <h3>Configuration</h3>
+        <p>Select the display language, UTC offset, session filter and polling interval.</p>
     </description>
     <params>
         <param field="Address" label="Language" width="150px">
@@ -26,8 +33,8 @@
                 <option label="Race" value="race"/>
             </options>
         </param>
-        <param field="Mode4" label="Next Event visible days ahead" width="75px" required="true" default="3" min="0"/>
-        <param field="Mode5" label="Next Event: text when no event found" width="200px" required="false" default=""/>
+        <param field="Mode4" label="Next-event visibility (days)" width="75px" required="true" default="3" min="0"/>
+        <param field="Mode5" label="No-event text" width="200px" required="false" default=""/>
         <param field="Mode6" label="Debug" width="75px">
             <options>
                 <option label="True" value="Debug"/>
