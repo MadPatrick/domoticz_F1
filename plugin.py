@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.4"
+<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.5"
         wikilink="https://files-f1.motorsportcalendars.com"
         externallink="https://github.com/MadPatrick/Domoticz_F1">
     <description>
         <h2>F1 Race Info</h2>
-        <p><strong>Version:</strong> 0.1.4</p>
+        <p><strong>Version:</strong> 0.1.5</p>
         <p>Retrieves upcoming Formula 1 race weekends from the Motorsport Calendars ICS feed.</p>
         <h3>Features</h3>
         <ul>
@@ -177,22 +177,22 @@ class BasePlugin:
             self.cachedEvents = events
             text, location = self._buildWeekendText(events)
 
+            # Als text leeg is, gebruik de noEventText (indien ingesteld)
+            display_text = text if text else self.noEventText
             device_name = location if location else "F1 Weekend"
 
-            if text and (text != self.lastText or location != self.lastLocation):
+            # Check altijd of de text veranderd is (ook als het nu leeg/noEventText is)
+            if display_text != self.lastText or location != self.lastLocation:
                 Devices[UNIT_WEEKEND].Update(
                     nValue=0,
-                    sValue=text,
+                    sValue=display_text,
                     Name=device_name
                 )
 
-                self.lastText = text
+                self.lastText = display_text
                 self.lastLocation = location
 
                 Domoticz.Log("Weekend device updated (" + device_name + ")")
-
-            elif not text:
-                Domoticz.Log("No upcoming race weekend found.")
 
             self._updateNextEventDevice()
 
