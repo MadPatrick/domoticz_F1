@@ -109,6 +109,23 @@ class BasePlugin:
                 device = Devices[unit]
                 device.Update(nValue=device.nValue, sValue=device.sValue, Image=self.imageID)
 
+    def _read_int_parameter(self, field, default, minimum=None, maximum=None):
+        raw = Parameters.get(field, "")
+        if raw is None or str(raw).strip() == "":
+            return default
+        try:
+            value = int(raw)
+            if minimum is not None and value < minimum:
+                raise ValueError
+            if maximum is not None and value > maximum:
+                raise ValueError
+            return value
+        except (TypeError, ValueError):
+            Domoticz.Error(
+                f"Invalid {field} value '{raw}'. Using default {default}."
+            )
+            return default
+
     def onStart(self):
         if Parameters["Mode6"] == "Debug":
             Domoticz.Debugging(1)
@@ -117,10 +134,10 @@ class BasePlugin:
         self.language = language
         self.ics_url = ICS_URL_NL if language == "nl" else ICS_URL_EN
 
-        self.offset = int(Parameters["Mode1"])
-        self.pollInterval = int(Parameters["Mode2"])
+        self.offset = self._read_int_parameter("Mode1", 1, -24, 24)
+        self.pollInterval = self._read_int_parameter("Mode2", 60, 1)
         self.sessionFilter = Parameters.get("Mode3", "all")
-        self.nextEventDays = int(Parameters.get("Mode4", "3"))
+        self.nextEventDays = self._read_int_parameter("Mode4", 3, 0)
         self.noEventText = Parameters.get("Mode5", "")
 
         self._load_device_icon()
