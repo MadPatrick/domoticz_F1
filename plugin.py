@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.5"
+<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.6"
         wikilink="https://files-f1.motorsportcalendars.com"
         externallink="https://github.com/MadPatrick/Domoticz_F1">
     <description>
         <h2>F1 Race Info</h2>
-        <p><strong>Version:</strong> 0.1.5</p>
+        <p><strong>Version:</strong> 0.1.6</p>
         <p>Retrieves upcoming Formula 1 race weekends from the Motorsport Calendars ICS feed.</p>
         <h3>Features</h3>
         <ul>
@@ -88,16 +88,30 @@ class BasePlugin:
         self.imageID = 0
 
     def _load_device_icon(self):
-        creating_new_icon = "f1logo" not in Images
+        icon_name = "f1logo"
+        existing_image = next(
+            (image for name, image in Images.items()
+             if str(name).casefold() == icon_name.casefold()),
+            None,
+        )
+        if existing_image is not None:
+            self.imageID = existing_image.ID
+            Domoticz.Log(f"Icons found in database (ImageID={self.imageID}).")
+            return
+
         try:
             Domoticz.Image("f1logo.zip").Create()
         except Exception as e:
             Domoticz.Error(f"Unable to load icon pack 'f1logo.zip': {e}")
             return
-        if "f1logo" in Images:
-            self.imageID = Images["f1logo"].ID
-            Domoticz.Log("Icons created and loaded." if creating_new_icon else
-                         f"Icons found in database (ImageID={self.imageID}).")
+        created_image = next(
+            (image for name, image in Images.items()
+             if str(name).casefold() == icon_name.casefold()),
+            None,
+        )
+        if created_image is not None:
+            self.imageID = created_image.ID
+            Domoticz.Log("Icons created and loaded.")
         else:
             Domoticz.Error("Unable to load icon pack 'f1logo.zip'")
 
