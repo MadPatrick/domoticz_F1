@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.6"
+<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.7"
         wikilink="https://files-f1.motorsportcalendars.com"
         externallink="https://github.com/MadPatrick/Domoticz_F1">
     <description>
         <h2>F1 Race Info</h2>
-        <p><strong>Version:</strong> 0.1.6</p>
+        <p><strong>Version:</strong> 0.1.7</p>
         <p>Retrieves upcoming Formula 1 race weekends from the Motorsport Calendars ICS feed.</p>
         <h3>Features</h3>
         <ul>
@@ -34,7 +34,7 @@
             </options>
         </param>
         <param field="Mode4" label="Next-event visibility (days)" width="75px" required="true" default="3" min="0"/>
-        <param field="Mode5" label="No-event text" width="200px" required="false" default=""/>
+        <param field="Mode5" label="No-event text (blank = automatic message)" width="200px" required="false" default=""/>
         <param field="Mode6" label="Debug" width="75px">
             <options>
                 <option label="True" value="Debug"/>
@@ -69,6 +69,9 @@ MONTHS_NL = [
     "", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
     "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"
 ]
+
+DEFAULT_NO_EVENT_TEXT_EN = "No upcoming event"
+DEFAULT_NO_EVENT_TEXT_NL = "Geen volgend evenement"
 
 
 class BasePlugin:
@@ -152,7 +155,14 @@ class BasePlugin:
         self.pollInterval = self._read_int_parameter("Mode2", 60, 1)
         self.sessionFilter = Parameters.get("Mode3", "all")
         self.nextEventDays = self._read_int_parameter("Mode4", 3, 0)
-        self.noEventText = Parameters.get("Mode5", "")
+
+        no_event_text = Parameters.get("Mode5", "")
+        if no_event_text is None or str(no_event_text).strip() == "":
+            no_event_text = (
+                DEFAULT_NO_EVENT_TEXT_NL if self.language == "nl"
+                else DEFAULT_NO_EVENT_TEXT_EN
+            )
+        self.noEventText = no_event_text
 
         self._load_device_icon()
 
