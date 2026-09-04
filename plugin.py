@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.9"
+<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.10"
         wikilink="https://files-f1.motorsportcalendars.com"
         externallink="https://github.com/MadPatrick/Domoticz_F1">
     <description>
         <h2>F1 Race Info</h2>
-        <p><strong>Version:</strong> 0.1.9</p>
+        <p><strong>Version:</strong> 0.1.10</p>
         <p>Retrieves upcoming Formula 1 race weekends from the Motorsport Calendars ICS feed.</p>
         <h3>Features</h3>
         <ul>
@@ -49,6 +49,8 @@ import Domoticz
 import datetime
 import re
 import urllib.request
+import threading
+import queue
 from zoneinfo import ZoneInfo
 
 ICS_URL_EN = "https://files-f1.motorsportcalendars.com/f1-calendar_p1_p2_p3_qualifying_sprint_gp.ics"
@@ -87,6 +89,15 @@ class BasePlugin:
         self.lastNextEvent = None
         self.cachedEvents = []
         self.imageID = 0
+
+        # ICS fetches run on a background thread so a slow/unreachable feed
+        # never blocks Domoticz's single callback thread (onStart/onHeartbeat).
+        # The worker thread only does the network I/O and hands the raw text
+        # (or an error) back through this queue; parsing and all Devices[...]
+        # updates happen in onHeartbeat, on the main thread, where that's safe.
+        self._fetch_lock = threading.Lock()
+        self._fetch_in_progress = False
+        self._result_queue = queue.Queue()
 
     def _load_device_icon(self):
         icon_name = "f1logo"
@@ -184,6 +195,8 @@ class BasePlugin:
     def onHeartbeat(self):
         self.heartbeatCount += 1
 
+        self._drainFetchResults()
+
         if self.cachedEvents:
             self._updateNextEventDevice()
 
@@ -194,23 +207,57 @@ class BasePlugin:
         self._fetchCalendar()
 
     def _fetchCalendar(self):
-        Domoticz.Debug("GET " + self.ics_url)
+        """Trigger a background fetch of the ICS feed. Runs on the main/callback
+        thread; only starts a worker thread and returns immediately, it never
+        blocks on network I/O itself."""
+        with self._fetch_lock:
+            if self._fetch_in_progress:
+                Domoticz.Debug("ICS fetch already in progress, skipping this trigger.")
+                return
+            self._fetch_in_progress = True
 
+        Domoticz.Debug("GET " + self.ics_url)
+        threading.Thread(
+            target=self._fetchCalendarWorker, args=(self.ics_url,), daemon=True
+        ).start()
+
+    def _fetchCalendarWorker(self, url):
+        """Runs on a background thread. Does ONLY the blocking network call and
+        hands the outcome back via self._result_queue - it must never touch
+        Devices[...] or call .Update(), that happens in onHeartbeat instead."""
         try:
             req = urllib.request.Request(
-                self.ics_url,
+                url,
                 headers={
                     "User-Agent": "Mozilla/5.0 compatible Domoticz F1 plugin"
                 }
             )
-
             with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
                 ics_text = resp.read().decode("utf-8", errors="replace")
-
+            self._result_queue.put(("ok", ics_text))
         except Exception as e:
-            Domoticz.Error("Failed to fetch ICS: " + str(e))
-            return
+            self._result_queue.put(("error", str(e)))
+        finally:
+            with self._fetch_lock:
+                self._fetch_in_progress = False
 
+    def _drainFetchResults(self):
+        """Consume any ICS fetch results left by the background worker since the
+        last heartbeat. Called every onHeartbeat tick; a no-op when nothing is
+        pending."""
+        while True:
+            try:
+                status, payload = self._result_queue.get_nowait()
+            except queue.Empty:
+                return
+
+            if status == "error":
+                Domoticz.Error("Failed to fetch ICS: " + payload)
+                continue
+
+            self._processICSText(payload)
+
+    def _processICSText(self, ics_text):
         try:
             events = self._parseICS(ics_text)
             self.cachedEvents = events
