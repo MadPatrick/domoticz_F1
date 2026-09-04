@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.8"
+<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.9"
         wikilink="https://files-f1.motorsportcalendars.com"
         externallink="https://github.com/MadPatrick/Domoticz_F1">
     <description>
         <h2>F1 Race Info</h2>
-        <p><strong>Version:</strong> 0.1.8</p>
+        <p><strong>Version:</strong> 0.1.9</p>
         <p>Retrieves upcoming Formula 1 race weekends from the Motorsport Calendars ICS feed.</p>
         <h3>Features</h3>
         <ul>
@@ -49,6 +49,7 @@ import Domoticz
 import datetime
 import re
 import urllib.request
+from zoneinfo import ZoneInfo
 
 ICS_URL_EN = "https://files-f1.motorsportcalendars.com/f1-calendar_p1_p2_p3_qualifying_sprint_gp.ics"
 ICS_URL_NL = "https://files-f1.motorsportcalendars.com/nl/f1-calendar_p1_p2_p3_qualifying_sprint_gp.ics"
@@ -325,6 +326,22 @@ class BasePlugin:
 
         if tzid == "UTC":
             dt = dt + datetime.timedelta(hours=self.offset)
+        else:
+            # TZID-tagged (or missing) value: convert the wall-clock time to
+            # UTC using the named IANA zone, then apply the same offset used
+            # for the "now" comparisons so both bases line up.
+            try:
+                dt_utc = dt.replace(tzinfo=ZoneInfo(tzid)) \
+                           .astimezone(datetime.timezone.utc) \
+                           .replace(tzinfo=None)
+                dt = dt_utc + datetime.timedelta(hours=self.offset)
+            except Exception:
+                # Unknown/non-IANA TZID (or no TZID at all, tzid == "LOCAL"):
+                # keep the previous no-op behaviour but make it visible.
+                Domoticz.Debug(
+                    "_parseDT: unrecognized or missing TZID '" + str(tzid) +
+                    "', using wall-clock value without timezone conversion"
+                )
 
         return dt
 
