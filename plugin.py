@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.1.10"
+<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.2.0"
         wikilink="https://files-f1.motorsportcalendars.com"
         externallink="https://github.com/MadPatrick/Domoticz_F1">
     <description>
         <h2>F1 Race Info</h2>
-        <p><strong>Version:</strong> 0.1.10</p>
+        <p><strong>Version:</strong> 0.2.0</p>
         <p>Retrieves upcoming Formula 1 race weekends from the Motorsport Calendars ICS feed.</p>
         <h3>Features</h3>
         <ul>
@@ -18,7 +18,7 @@
         <p>Select the display language, UTC offset, session filter and polling interval.</p>
     </description>
     <params>
-        <param field="Address" label="Language" width="150px">
+        <param field="Language" label="Language" width="150px">
             <options>
                 <option label="English" value="en" default="true"/>
                 <option label="Nederlands" value="nl"/>
@@ -35,12 +35,7 @@
         </param>
         <param field="Mode4" label="Next-event visibility (days)" width="75px" required="true" default="3" min="0"/>
         <param field="Mode5" label="No-event text (blank = empty value)" width="200px" required="false" default=""/>
-        <param field="Mode6" label="Debug" width="75px">
-            <options>
-                <option label="True" value="Debug"/>
-                <option label="False" value="Normal" default="true"/>
-            </options>
-        </param>
+        <param field="EnableDebug" type="boolean" label="Debug" default="false"/>
     </params>
 </plugin>
 """
@@ -153,10 +148,15 @@ class BasePlugin:
             return default
 
     def onStart(self):
-        if Parameters["Mode6"] == "Debug":
+        if str(Parameters.get("EnableDebug", "false")).strip().lower() == "true":
             Domoticz.Debugging(1)
 
-        language = Parameters.get("Address", "en")
+        language = str(Parameters.get("Language", "en") or "en").strip().lower()
+        if language not in ("en", "nl"):
+            Domoticz.Error(
+                f"Invalid Language value '{language}'. Using English."
+            )
+            language = "en"
         self.language = language
         self.ics_url = ICS_URL_NL if language == "nl" else ICS_URL_EN
 
