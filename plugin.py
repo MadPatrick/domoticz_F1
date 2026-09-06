@@ -95,7 +95,14 @@ class BasePlugin:
         self._result_queue = queue.Queue()
 
     def _load_device_icon(self):
-        icon_name = "f1logo"
+        # icon_name must start with this plugin's key ("F1Info") - Domoticz
+        # only loads a plugin's pre-existing custom icons into Images at
+        # startup when the icon's Base (in icons.txt) satisfies
+        # Base LIKE '<PluginKey>%'. The short "f1logo" Base used before
+        # didn't satisfy that, so Images never contained it on restart and
+        # it was silently recreated (and re-logged as "created") every
+        # single time instead of found.
+        icon_name = "F1Info"
         existing_image = next(
             (image for name, image in Images.items()
              if str(name).casefold() == icon_name.casefold()),
