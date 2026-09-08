@@ -43,6 +43,7 @@
 import Domoticz
 import datetime
 import re
+import time
 import urllib.request
 import threading
 import queue
@@ -93,6 +94,12 @@ class BasePlugin:
         self._fetch_lock = threading.Lock()
         self._fetch_in_progress = False
         self._result_queue = queue.Queue()
+
+        # Signals background workers to stop, and tracks the active fetch
+        # thread so onStop() can join it instead of leaving it running past
+        # plugin shutdown.
+        self._stop_event = threading.Event()
+        self._fetch_thread = None
 
     def _load_device_icon(self):
         # icon_name must start with this plugin's key ("F1Info") - Domoticz
@@ -155,6 +162,8 @@ class BasePlugin:
             return default
 
     def onStart(self):
+        self._stop_event.clear()
+
         if str(Parameters.get("EnableDebug", "false")).strip().lower() == "true":
             Domoticz.Debugging(1)
 
@@ -217,6 +226,10 @@ class BasePlugin:
         """Trigger a background fetch of the ICS feed. Runs on the main/callback
         thread; only starts a worker thread and returns immediately, it never
         blocks on network I/O itself."""
+        if self._stop_event.is_set():
+            Domoticz.Debug("Shutdown in progress, skipping ICS fetch trigger.")
+            return
+
         with self._fetch_lock:
             if self._fetch_in_progress:
                 Domoticz.Debug("ICS fetch already in progress, skipping this trigger.")
@@ -224,14 +237,24 @@ class BasePlugin:
             self._fetch_in_progress = True
 
         Domoticz.Debug("GET " + self.ics_url)
-        threading.Thread(
-            target=self._fetchCalendarWorker, args=(self.ics_url,), daemon=True
-        ).start()
+        self._fetch_thread = threading.Thread(
+            target=self._fetchCalendarWorker,
+            args=(self.ics_url,),
+            name="F1-Calendar-Fetch",
+            daemon=True
+        )
+        self._fetch_thread.start()
 
     def _fetchCalendarWorker(self, url):
         """Runs on a background thread. Does ONLY the blocking network call and
         hands the outcome back via self._result_queue - it must never touch
         Devices[...] or call .Update(), that happens in onHeartbeat instead."""
+        if self._stop_event.is_set():
+            with self._fetch_lock:
+                self._fetch_in_progress = False
+            return
+
+        Domoticz.Debug("F1 Info: calendar worker started.")
         try:
             req = urllib.request.Request(
                 url,
@@ -247,6 +270,7 @@ class BasePlugin:
         finally:
             with self._fetch_lock:
                 self._fetch_in_progress = False
+            Domoticz.Debug("F1 Info: calendar worker finished.")
 
     def _drainFetchResults(self):
         """Consume any ICS fetch results left by the background worker since the
@@ -525,7 +549,18 @@ class BasePlugin:
         return self.noEventText
 
     def onStop(self):
-        Domoticz.Log("F1 Info plugin stopped.")
+        start = time.time()
+
+        self._stop_event.set()
+
+        thread = self._fetch_thread
+        if thread is not None and thread.is_alive():
+            Domoticz.Debug("F1 Info: stopping calendar worker.")
+            thread.join(timeout=FETCH_TIMEOUT + 1)
+
+        self._fetch_thread = None
+
+        Domoticz.Log(f"F1 Info plugin stopped ({time.time() - start:.2f}s).")
 
 
 _plugin = BasePlugin()
