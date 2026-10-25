@@ -222,6 +222,11 @@ class BasePlugin:
         Domoticz.Heartbeat(60)
         Domoticz.Log("F1 Info plugin started.")
 
+        Domoticz.Log(
+            "F1 Info: time zone mode '" + self.tzMode + "', fixed UTC offset "
+            + str(self.offset) + ", Domoticz location setting '"
+            + str(Settings.get("Location", "")) + "'"
+        )
         self._lookupTimeZone()
         self._fetchCalendar()
 
@@ -266,7 +271,8 @@ class BasePlugin:
         location = self._domoticzLocation()
         if location is None:
             Domoticz.Error(
-                "F1 Info: no valid Domoticz location set; using UTC offset "
+                "F1 Info: no valid Domoticz location found in the settings ('"
+                + str(Settings.get("Location", "")) + "'); using UTC offset "
                 + str(self.offset)
             )
             self.tzMode = "offset"
@@ -275,6 +281,9 @@ class BasePlugin:
             if self.tzLookupInProgress:
                 return
             self.tzLookupInProgress = True
+        Domoticz.Log(
+            "F1 Info: looking up the time zone for %.1f, %.1f" % location
+        )
         threading.Thread(
             target=self._timeZoneWorker,
             args=location,
@@ -369,7 +378,11 @@ class BasePlugin:
 
             if status == "tz":
                 self.tz = ZoneInfo(payload)
-                Domoticz.Log("F1 Info: using time zone " + payload)
+                Domoticz.Log(
+                    "F1 Info: using time zone " + payload + " (UTC offset now "
+                    + str(self._utcToLocal(datetime.datetime(2000, 1, 1)).hour
+                          - datetime.datetime(2000, 1, 1).hour) + "h in January)"
+                )
                 if self.cachedEvents:
                     self._applyEvents(self.cachedEvents)
                 continue
