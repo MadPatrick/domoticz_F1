@@ -6,7 +6,7 @@ A [Domoticz](https://www.domoticz.com/) plugin that displays the upcoming Formul
 
 This plugin fetches the F1 calendar from the [motorsportcalendars.com](https://files-f1.motorsportcalendars.com) ICS feed and displays the sessions of the next race weekend in a Domoticz Text device. The device name is automatically updated to reflect the location (Grand Prix name) of the upcoming race weekend.
 
-Sessions are shown with their local date and time (adjusted for your UTC offset), for example:
+Sessions are shown with their local date and time (in the time zone of your Domoticz location, including summer time), for example:
 
 ```
 Thu 22 May 17:30 : Practice 1
@@ -31,7 +31,8 @@ Sun 25 May 15:00 : Grand Prix
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| **UTC offset in hours** | Your local UTC offset (e.g. `1` for CET, `2` for CEST). Used to convert session times from UTC to local time. | `1` |
+| **Fixed UTC offset in hours** | Fixed UTC offset (e.g. `1` for CET). Used when *Time zone* is set to a fixed offset, and as fallback while the time zone of the Domoticz location is not known. It does not follow summer time. | `1` |
+| **Time zone** | *Domoticz location*: the time zone is looked up (Open-Meteo) from the latitude/longitude in Domoticz Setup → Settings and follows summer time. *Fixed UTC offset*: use the offset above. | Domoticz location |
 | **Poll interval minutes** | How often (in minutes) the plugin fetches the calendar to check for updates. | `60` |
 | **Show sessions** | Filter which sessions are displayed in the device. See options below. | Training / Sprint / Race |
 | **Debug** | Enable or disable debug logging in the Domoticz log. | False |
