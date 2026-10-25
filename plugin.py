@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.2.1"
+<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.3.0"
         wikilink="https://files-f1.motorsportcalendars.com"
         externallink="https://github.com/MadPatrick/Domoticz_F1">
     <description>
         <h2>F1 Race Info</h2>
-        <p><strong>Version:</strong> 0.2.1</p>
+        <p><strong>Version:</strong> 0.3.0</p>
         <p>Retrieves upcoming Formula 1 race weekends from the Motorsport Calendars ICS feed.</p>
         <h3>Features</h3>
         <ul>
@@ -15,7 +15,7 @@
             <li>Automatically includes the Grand Prix location in the device name.</li>
         </ul>
         <h3>Configuration</h3>
-        <p>Select the display language, UTC offset, session filter and polling interval.</p>
+        <p>Select the display language, time zone, session filter and polling interval. The default time zone is the one of the Domoticz location, which follows summer time; the UTC offset is then only the fallback.</p>
     </description>
     <params>
         <param field="Language" label="Language" width="150px">
@@ -24,7 +24,7 @@
                 <option label="Nederlands" value="nl"/>
             </options>
         </param>
-        <param field="Mode1" label="UTC offset in hours" width="75px" required="true" default="1"/>
+        <param field="Mode1" label="Fixed UTC offset in hours" width="75px" required="true" default="1"/>
         <param field="Mode2" label="Poll interval minutes" width="50px" required="true" default="60"/>
         <param field="Mode3" label="Show sessions" width="200px">
             <options>
@@ -35,6 +35,12 @@
         </param>
         <param field="Mode4" label="Next-event visibility (days)" width="75px" required="true" default="3" min="0"/>
         <param field="Mode5" label="No-event text (blank = empty value)" width="200px" required="false" default=""/>
+        <param field="Mode6" label="Time zone" width="250px">
+            <options>
+                <option label="Domoticz location (follows summer time)" value="domoticz" default="true"/>
+                <option label="Fixed UTC offset (no summer time)" value="offset"/>
+            </options>
+        </param>
         <param field="EnableDebug" type="boolean" label="Debug" default="false"/>
     </params>
 </plugin>
@@ -44,6 +50,7 @@ import Domoticz
 import datetime
 import re
 import time
+import json
 import urllib.request
 import threading
 import queue
@@ -56,6 +63,7 @@ UNIT_NEXT_EVENT = 2
 SESSION_SEP = " - "
 WINDOW_HOURS = 4
 FETCH_TIMEOUT = 5
+TZ_LOOKUP_RETRY_HEARTBEATS = 10
 
 DAYS_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 MONTHS_EN = [
@@ -75,6 +83,9 @@ class BasePlugin:
         self.ics_url = ICS_URL_EN
         self.language = "en"
         self.offset = 1
+        self.tzMode = "domoticz"
+        self.tz = None
+        self.tzLookupInProgress = False
         self.pollInterval = 60
         self.sessionFilter = "all"
         self.nextEventDays = 3
@@ -177,6 +188,11 @@ class BasePlugin:
         self.ics_url = ICS_URL_NL if language == "nl" else ICS_URL_EN
 
         self.offset = self._read_int_parameter("Mode1", 1, -24, 24)
+        # An empty Mode6 (hardware added before this option existed) means
+        # the Domoticz location, so those installs start following summer time.
+        tz_mode = str(Parameters.get("Mode6", "") or "").strip().lower()
+        self.tzMode = "offset" if tz_mode == "offset" else "domoticz"
+        self.tz = None
         self.pollInterval = self._read_int_parameter("Mode2", 60, 1)
         self.sessionFilter = Parameters.get("Mode3", "all")
         self.nextEventDays = self._read_int_parameter("Mode4", 3, 0)
@@ -206,12 +222,17 @@ class BasePlugin:
         Domoticz.Heartbeat(60)
         Domoticz.Log("F1 Info plugin started.")
 
+        self._lookupTimeZone()
         self._fetchCalendar()
 
     def onHeartbeat(self):
         self.heartbeatCount += 1
 
         self._drainFetchResults()
+
+        if (self.tzMode == "domoticz" and self.tz is None
+                and self.heartbeatCount % TZ_LOOKUP_RETRY_HEARTBEATS == 0):
+            self._lookupTimeZone()
 
         if self.cachedEvents:
             self._updateNextEventDevice()
@@ -221,6 +242,70 @@ class BasePlugin:
 
         Domoticz.Debug("Heartbeat: fetching ICS calendar.")
         self._fetchCalendar()
+
+    def _domoticzLocation(self):
+        """Latitude/longitude from the Domoticz settings ("lat;lon"), or None."""
+        raw = str(Settings.get("Location", "") or "")
+        parts = [p.strip().replace(",", ".") for p in re.split(r"[;\s]+", raw) if p.strip()]
+        if len(parts) != 2:
+            return None
+        try:
+            lat, lon = float(parts[0]), float(parts[1])
+        except ValueError:
+            return None
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            return None
+        return lat, lon
+
+    def _lookupTimeZone(self):
+        """Start a background lookup of the IANA time zone of the Domoticz
+        location. Until it succeeds (or when it cannot) the fixed UTC offset
+        is used."""
+        if self.tzMode != "domoticz" or self._stop_event.is_set():
+            return
+        location = self._domoticzLocation()
+        if location is None:
+            Domoticz.Error(
+                "F1 Info: no valid Domoticz location set; using UTC offset "
+                + str(self.offset)
+            )
+            self.tzMode = "offset"
+            return
+        with self._fetch_lock:
+            if self.tzLookupInProgress:
+                return
+            self.tzLookupInProgress = True
+        threading.Thread(
+            target=self._timeZoneWorker,
+            args=location,
+            name="F1-TimeZone-Lookup",
+            daemon=True
+        ).start()
+
+    def _timeZoneWorker(self, lat, lon):
+        """Runs on a background thread; hands the result back via the queue."""
+        try:
+            url = ("https://api.open-meteo.com/v1/forecast?latitude=%.1f&longitude=%.1f"
+                   "&current=temperature_2m&timezone=auto" % (lat, lon))
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "Mozilla/5.0 compatible Domoticz F1 plugin"}
+            )
+            with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+                name = json.loads(resp.read().decode("utf-8", errors="replace")).get("timezone")
+            ZoneInfo(name)
+            self._result_queue.put(("tz", name))
+        except Exception as e:
+            self._result_queue.put(("tzerror", str(e)))
+        finally:
+            with self._fetch_lock:
+                self.tzLookupInProgress = False
+
+    def _utcToLocal(self, dt_utc):
+        """Naive UTC datetime -> naive local datetime in the chosen time zone."""
+        if self.tz is not None:
+            return dt_utc.replace(tzinfo=datetime.timezone.utc) \
+                         .astimezone(self.tz).replace(tzinfo=None)
+        return dt_utc + datetime.timedelta(hours=self.offset)
 
     def _fetchCalendar(self):
         """Trigger a background fetch of the ICS feed. Runs on the main/callback
@@ -282,6 +367,20 @@ class BasePlugin:
             except queue.Empty:
                 return
 
+            if status == "tz":
+                self.tz = ZoneInfo(payload)
+                Domoticz.Log("F1 Info: using time zone " + payload)
+                if self.cachedEvents:
+                    self._applyEvents(self.cachedEvents)
+                continue
+
+            if status == "tzerror":
+                Domoticz.Error(
+                    "F1 Info: time zone lookup failed (" + payload + "); using UTC offset "
+                    + str(self.offset) + " for now"
+                )
+                continue
+
             if status == "error":
                 Domoticz.Error("Failed to fetch ICS: " + payload)
                 continue
@@ -290,7 +389,12 @@ class BasePlugin:
 
     def _processICSText(self, ics_text):
         try:
-            events = self._parseICS(ics_text)
+            self._applyEvents(self._parseICS(ics_text))
+        except Exception as e:
+            Domoticz.Error("Error processing ICS: " + str(e))
+
+    def _applyEvents(self, events):
+        try:
             self.cachedEvents = events
             text, location = self._buildWeekendText(events)
 
@@ -403,7 +507,7 @@ class BasePlugin:
             dt = datetime.datetime.strptime(dt_str, "%Y%m%d")
 
         if tzid == "UTC":
-            dt = dt + datetime.timedelta(hours=self.offset)
+            dt = self._utcToLocal(dt)
         else:
             # TZID-tagged (or missing) value: convert the wall-clock time to
             # UTC using the named IANA zone, then apply the same offset used
@@ -412,7 +516,7 @@ class BasePlugin:
                 dt_utc = dt.replace(tzinfo=ZoneInfo(tzid)) \
                            .astimezone(datetime.timezone.utc) \
                            .replace(tzinfo=None)
-                dt = dt_utc + datetime.timedelta(hours=self.offset)
+                dt = self._utcToLocal(dt_utc)
             except Exception:
                 # Unknown/non-IANA TZID (or no TZID at all, tzid == "LOCAL"):
                 # keep the previous no-op behaviour but make it visible.
@@ -449,7 +553,7 @@ class BasePlugin:
         return True
 
     def _buildWeekendText(self, events):
-        now = datetime.datetime.utcnow() + datetime.timedelta(hours=self.offset)
+        now = self._utcToLocal(datetime.datetime.utcnow())
 
         parsed = []
         for ev in events:
@@ -505,7 +609,7 @@ class BasePlugin:
         return "\n".join(lines), race_location
 
     def _buildNextEventText(self, events):
-        now = datetime.datetime.utcnow() + datetime.timedelta(hours=self.offset)
+        now = self._utcToLocal(datetime.datetime.utcnow())
         cutoff = now + datetime.timedelta(days=self.nextEventDays)
 
         parsed = []
