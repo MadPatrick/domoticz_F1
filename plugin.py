@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.3.0"
+<plugin key="F1Info" name="F1 Race Info" author="MadPatrick" version="0.3.1"
         wikilink="https://files-f1.motorsportcalendars.com"
         externallink="https://github.com/MadPatrick/Domoticz_F1">
     <description>
         <h2>F1 Race Info</h2>
-        <p><strong>Version:</strong> 0.3.0</p>
+        <p><strong>Version:</strong> 0.3.1</p>
         <p>Retrieves upcoming Formula 1 race weekends from the Motorsport Calendars ICS feed.</p>
         <h3>Features</h3>
         <ul>
@@ -309,6 +309,21 @@ class BasePlugin:
             with self._fetch_lock:
                 self.tzLookupInProgress = False
 
+    def _describeCurrentOffset(self):
+        """Current UTC offset of the chosen time zone, e.g. 'currently UTC+1,
+        winter time' or 'currently UTC+2, summer time'."""
+        now = datetime.datetime.now(self.tz)
+        minutes = int(now.utcoffset().total_seconds() // 60)
+        sign = "+" if minutes >= 0 else "-"
+        hours, rest = divmod(abs(minutes), 60)
+        text = "currently UTC" + sign + str(hours) + (":%02d" % rest if rest else "")
+        # Only mention summer/winter time for zones that actually switch.
+        jan = datetime.datetime(now.year, 1, 1, tzinfo=self.tz).utcoffset()
+        jul = datetime.datetime(now.year, 7, 1, tzinfo=self.tz).utcoffset()
+        if jan != jul:
+            text += ", summer time" if now.dst() else ", winter time"
+        return text
+
     def _utcToLocal(self, dt_utc):
         """Naive UTC datetime -> naive local datetime in the chosen time zone."""
         if self.tz is not None:
@@ -379,9 +394,8 @@ class BasePlugin:
             if status == "tz":
                 self.tz = ZoneInfo(payload)
                 Domoticz.Log(
-                    "F1 Info: using time zone " + payload + " (UTC offset now "
-                    + str(self._utcToLocal(datetime.datetime(2000, 1, 1)).hour
-                          - datetime.datetime(2000, 1, 1).hour) + "h in January)"
+                    "F1 Info: using time zone " + payload + " ("
+                    + self._describeCurrentOffset() + ")"
                 )
                 if self.cachedEvents:
                     self._applyEvents(self.cachedEvents)
